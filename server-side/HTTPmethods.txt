@@ -1,0 +1,35 @@
+#should get a list of envelope objects
+GET http://localhost:3000/envelope/
+
+####
+
+#should return 1 envelope object using category name in URL param
+GET http://localhost:3000/envelope/http%20request
+
+####
+#should return the new added envelope category and budget
+POST http://localhost:3000/envelope/
+Content-Type: application/json
+
+{
+  "category": "Drink",
+  "budget": 150
+}
+
+
+####
+#should return the new category name
+PUT http://localhost:3000/envelope/Pizza
+Content-Type: application/json
+
+{
+  "newName": "Hot Dog"
+}
+
+####
+#deltes record returns sucess response
+DELETE http://localhost:3000/envelope/Pizza
+
+<> 2023-01-07T231405.200.json
+
+####
