@@ -1,6 +1,8 @@
 
 const {Pool} = require('pg');
-require('dotenv').config()
+const path = require('path')
+const {response} = require("express");
+require('dotenv').config({ path: path.resolve(__dirname, './.env') })
 const sql = require('yesql').pg
 
 const username = process.env.POSTGRES_USERNAME;
@@ -48,8 +50,15 @@ class EnvelopeDB {
     }
 
     //envelope details
+
+    async getEnvelopes() {
+        const response = await this.pool.query("SELECT *" +
+            "FROM PERSONAL_BUDGET.ENVELOPES.ENVELOPE;")
+
+        return response.rows
+    }
     async getEnvelopeById(envelopeId) {
-        const response = this.pool.query(sql(
+        const response = await this.pool.query(sql(
             "SELECT " +
             "CATEGORY," +
             "BALANCE " +
@@ -58,7 +67,19 @@ class EnvelopeDB {
         )({
             id:envelopeId
         }))
-        return response;
+        return response.rows[0];
+    }
+    async getEnvelopeByCategory(category) {
+        const response = await this.pool.query(sql(
+            "SELECT " +
+            "CATEGORY, " +
+            "BALANCE " +
+            "FROM PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
+            "WHERE CATEGORY = :category;"
+        )({
+            category: category
+        }))
+        return response.rows[0];
     }
 
     async setEnvelopeBudget(envelopeId, budget) {
@@ -77,26 +98,26 @@ class EnvelopeDB {
             return "Failed to set budget."
         }
     }
+    async setCategoryName(oldName, newName) {
+        const response = await this.pool.query(sql(
+            "UPDATE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
+            "SET CATEGORY = :newName WHERE CATEGORY = :oldName " +
+            "RETURNING CATEGORY;"
+        )({
+            newName:newName,
+            oldName:oldName
+        }))
+        return response.rows[0].category;
+
+    }
     //async transferEnvelopeBudget()
 
-    async getEnvelopeByCategory(category) {
-        const response = this.pool.query(sql(
-            "SELECT " +
-            "CATEGORY, " +
-            "BALANCE " +
-            "FROM PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
-            "WHERE CATEGORY = :category;"
-        )({
-            category: category
-        }))
-        return response;
-    }
-    async addEnvelope(ownerId, category, balance) {
+    async addEnvelope(category, balance) {
         const response = await this.pool.query(sql(
             "INSERT INTO PERSONAL_BUDGET.ENVELOPES.ENVELOPE" +
             "(OWNER_ID, CATEGORY, BALANCE) " +
             "VALUES (:ownerId, :category, :balance) RETURNING *;")({
-                ownerId: ownerId,
+                ownerId: this.userId,
                 category: category,
                 balance: balance
             }
@@ -104,6 +125,31 @@ class EnvelopeDB {
         //console.log(response.rows[0].id)
         return response.rows[0].id
     }
+    async deleteEnvelope(id=null, category=null) { //can take id or category name
+        let param;
+        let value;
+        if (id) {
+            param = "ID";
+            value = id;
+        } else if (category) {
+            param = "CATEGORY"
+            value = category;
+        } else {
+            return "you must enter an Id or a Category!"
+        }
+        const response = await this.pool.query(sql(
+            "DELETE FROM PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
+            "WHERE :param = ':category;'"
+        )({
+            param:param,
+            value:value
+        }))
+
+        return response;
+    }
+    //Transferring funds
 }
-testDB = new EnvelopeDB();
+
+
+module.exports= EnvelopeDB
 

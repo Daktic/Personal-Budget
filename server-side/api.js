@@ -2,10 +2,9 @@ const express = require('express');
 const apiRouter = express.Router();
 
 // db imports
-const {
-    envelopes,
-    getEnvelopeBycategory
-} = require("./db");
+const EnvelopeDB = require("./db")
+
+const envelopes = new EnvelopeDB(1);
 
 // middlewear imports
 const {
@@ -17,33 +16,35 @@ const spendRouter = require("./spend");
 apiRouter.use("/spend", spendRouter)
 
 // GET all
-apiRouter.get("/", (req, res) =>{
-    res.send(envelopes);
+apiRouter.get("/", async (req, res) =>{
+    res.send(await envelopes.getEnvelopes()); //returns an array of envelope objects
 });
 
 // GET categoryName
-apiRouter.get("/:categoryName", (req, res, next) =>{
+apiRouter.get("/:categoryName", async (req, res, next) =>{
     const envelopeParam = req.params.categoryName;
-    res.send(getEnvelopeBycategory(envelopeParam));
+    res.send(await envelopes.getEnvelopeByCategory(envelopeParam)); //returns a single envelope object
 });
 
 // POST >> db.js
-apiRouter.post("/", (req, res, next) =>{
+apiRouter.post("/", async (req, res, next) =>{
     const envelopeBody = req.body;
-    envelopes.push(envelopeBody);
-    res.send("Envelope successfully added");
+    const envelopeID = await envelopes.addEnvelope(
+        envelopeBody.category,
+        envelopeBody.budget? envelopeBody.budget : null //The budget isn't required
+                                                                // This will check for budget and if there is none, pass null
+                                                                //I am not sure if this is even needed
+    );
+    res.send(await envelopes.getEnvelopeById(envelopeID)); //returns the newly created envelope
 });
 
 // PUT categoryName
-apiRouter.put("/:categoryName", updateEnvelopeByIndex, (req, res, next) =>{
-    res.send("Envelope successfully updated");
+apiRouter.put("/:categoryName", async (req, res, next) =>{
+    res.send(await envelopes.setCategoryName(req.params.categoryName, req.body.newName));
 });
 
-apiRouter.delete("/:categoryName", (req, res, next)=>{
-    const envelopeParam = req.params.categoryName;
-    // Find the index & remove the evnevelop
-    const envelopeIndex = envelopes.findIndex(env => env.category === envelopeParam);
-    envelopes.splice(envelopeIndex, 1);
+apiRouter.delete("/:categoryName", async (req, res, next)=>{
+    res.send(await envelopes.deleteEnvelope(null, req.params.categoryName));
 
     res.send("Envelope successfully deleted");
 });
