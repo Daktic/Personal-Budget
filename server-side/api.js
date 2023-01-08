@@ -43,10 +43,19 @@ apiRouter.put("/:categoryName", async (req, res, next) =>{
     res.send(await envelopes.setCategoryName(req.params.categoryName, req.body.newName));
 });
 
+//ToDO
+//does not appear to be working.
 apiRouter.delete("/:categoryName", async (req, res, next)=>{
     res.send(await envelopes.deleteEnvelope(null, req.params.categoryName));
 
-    res.send("Envelope successfully deleted");
+});
+
+apiRouter.put("/:categoryName/transfer", async (req, res, next) =>{
+    res.send(await envelopes.transferFund(
+        req.params.categoryName,
+        req.body.category,
+        req.body.amount
+    ));
 });
 
 // Export router to "server.js"

@@ -82,22 +82,6 @@ class EnvelopeDB {
         return response.rows[0];
     }
 
-    async setEnvelopeBudget(envelopeId, budget) {
-        const userBudget = await this.getUserById(this.userId).balance
-        if (budget < userBudget) {
-            const response = await this.pool.query(sql(
-                "UPDATE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
-                "SET BALANCE = :budget " +
-                "WHERE ID = :id RETURNING BUDGET;"
-            ))({
-                budget: budget,
-                id: envelopeId
-            })
-            return response.rows[0].budget
-        } else {
-            return "Failed to set budget."
-        }
-    }
     async setCategoryName(oldName, newName) {
         const response = await this.pool.query(sql(
             "UPDATE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
@@ -110,7 +94,6 @@ class EnvelopeDB {
         return response.rows[0].category;
 
     }
-    //async transferEnvelopeBudget()
 
     async addEnvelope(category, balance) {
         const response = await this.pool.query(sql(
@@ -147,8 +130,99 @@ class EnvelopeDB {
 
         return response;
     }
-    //Transferring funds
+    //Transaction endpoints
+
+    async createTX(sendCategory, receiveCategory=null) {
+        const response = await this.pool.query(sql(
+            "INSERT INTO PERSONAL_BUDGET.ENVELOPE.ENVELOPE"
+        ))
+    }
+
+    async getEnvelopeBudget(envelopeCategory) {
+        return await this.pool.query(sql(
+            "SELECT BALANCE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
+            "WHERE CATEGORY = :category;"
+        )({
+            category:envelopeCategory
+        })).rows[0].balance;
+    }
+    async deleteEnvelopeBudget(envelopeCategory) {
+        const envelopeID = await this.getEnvelopeByCategory(envelopeCategory).id;
+        const response = await this.setEnvelopeBudget(envelopeID, 0);
+        return response;
+    }
+
+    async spendEnvelope(envelopeCategory, amount) {
+        const envelope = await this.getEnvelopeByCategory(envelopeCategory);
+        const envelopeID = envelope.id;
+        const envelopeBudget = envelope.balance;
+        if (envelopeBudget < amount) {
+            return "Not enough to spend!"
+        } else {
+            return await this.setEnvelopeBudget(envelopeID, amount);
+        }
+    }
+
+    async setEnvelopeBudget(envelopeId, budget) {
+        const userBudget = await this.getUserById(this.userId).balance
+        if (budget < userBudget) {
+            const response = await this.pool.query(sql(
+                "UPDATE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
+                "SET BALANCE = :budget " +
+                "WHERE ID = :envelopeId RETURNING BALANCE;"
+            ))({
+                budget: budget,
+                id: envelopeId
+            })
+            return response.rows[0].balance
+        } else {
+            return "Failed to set budget."
+        }
+    }
+    async transferFund(fromCategory, toCategory, amount) {
+
+        const oldEnvelopeBudget = await this.pool.query(sql(
+            "SELECT BALANCE FROM " +
+            "PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
+            "WHERE CATEGORY = :fromCategory;"
+        )({
+            fromCategory:fromCategory
+        }))
+        const newEnvelopeBudget = await this.pool.query(sql(
+            "SELECT BALANCE FROM " +
+            "PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
+            "WHERE CATEGORY = :toCategory;"
+        )({
+            toCategory:toCategory
+        }))
+
+        if (amount > oldEnvelopeBudget.rows[0].balance) {
+            return "Error, budget underflow";
+        } else {
+
+            let newAmount = oldEnvelopeBudget.rows[0].balance - amount;
+            await this.pool.query(sql(
+                "UPDATE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
+                "SET BALANCE = :newAmount WHERE CATEGORY = :fromCategory " +
+                "RETURNING BALANCE;"
+            )({
+                newAmount:newAmount,
+                fromCategory:fromCategory
+            }))
+
+            newAmount = newEnvelopeBudget.rows[0].balance + amount;
+            await this.pool.query(sql(
+                "UPDATE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
+                "SET BALANCE = :amount WHERE CATEGORY = :toCategory " +
+                "RETURNING BALANCE;"
+            )({
+                amount:newAmount,
+                toCategory:toCategory
+            }))
+        }
+    }
 }
+
 
 
 module.exports= EnvelopeDB
