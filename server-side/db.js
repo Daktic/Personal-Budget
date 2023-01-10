@@ -31,9 +31,9 @@ class EnvelopeDB {
             "BUDGET " +
             "FROM PERSONAL_BUDGET.ENVELOPES.USERS " +
             "WHERE ID = :id;"
-        ))({
+        )({
             id:id
-        })
+        }))
         return response;
     }
     async setUserBudget(id, amount) {
@@ -72,6 +72,7 @@ class EnvelopeDB {
     async getEnvelopeByCategory(category) {
         const response = await this.pool.query(sql(
             "SELECT " +
+            "ID, " +
             "CATEGORY, " +
             "BALANCE " +
             "FROM PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
@@ -131,94 +132,122 @@ class EnvelopeDB {
         return response;
     }
     //Transaction endpoints
+    async createTX(
+        sendCategory,
+        transactionType,
+        amount,
+        receiveCategory
+    ) {
+        let txType;
+        if (!receiveCategory) {
+            receiveCategory = sendCategory;
+            if (transactionType === 'Add') {
+                txType = 'Add'
+            } else {
+                txType = 'Subtract'
+            }
+        } else {
+            txType = 'Transfer'
+        }
 
-    async createTX(sendCategory, receiveCategory=null) {
-        const response = await this.pool.query(sql(
-            "INSERT INTO PERSONAL_BUDGET.ENVELOPE.ENVELOPE"
-        ))
-    }
-
-    async getEnvelopeBudget(envelopeCategory) {
-        return await this.pool.query(sql(
-            "SELECT BALANCE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
-            "WHERE CATEGORY = :category;"
+        await this.pool.query(sql(
+            "INSERT INTO PERSONAL_BUDGET.ENVELOPES.TRANSACTIONS " +
+            "(CALLER_ID, TX_TYPE, SEND_CATEGORY, RECEIVE_CATEGORY, AMOUNT) " +
+            "VALUES (:callerID,:txType,:sendCategory,:receiveCategory,:amount);"
         )({
-            category:envelopeCategory
-        })).rows[0].balance;
+            callerID:this.userId,
+            txType:txType,
+            sendCategory:sendCategory,
+            receiveCategory:receiveCategory,
+            amount:amount
+        }));
     }
+
     async deleteEnvelopeBudget(envelopeCategory) {
-        const envelopeID = await this.getEnvelopeByCategory(envelopeCategory).id;
-        const response = await this.setEnvelopeBudget(envelopeID, 0);
+        const envelope = await this.getEnvelopeByCategory(envelopeCategory);
+        const envelopeBalance = await envelope.balance
+        const response = await this.spendEnvelope(envelopeCategory, envelopeBalance);
+        await this.createTX(
+            envelopeCategory,
+            'Subtract',
+            envelopeBalance
+        )
         return response;
     }
 
     async spendEnvelope(envelopeCategory, amount) {
         const envelope = await this.getEnvelopeByCategory(envelopeCategory);
         const envelopeID = envelope.id;
-        const envelopeBudget = envelope.balance;
-        if (envelopeBudget < amount) {
+        const envelopeBalance = envelope.balance;
+
+
+        if (envelopeBalance < amount) {
             return "Not enough to spend!"
         } else {
-            return await this.setEnvelopeBudget(envelopeID, amount);
+            const newBalance = (envelopeBalance - parseInt(amount));
+
+            await this.pool.query(sql(
+                "UPDATE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
+                "SET BALANCE = :newBalance WHERE ID = :id;"
+            )({
+                newBalance:newBalance,
+                id:envelopeID
+            }))
+            await this.createTX(
+                envelopeCategory,
+                'Subtract',
+                envelopeBalance
+            );
         }
     }
 
-    async setEnvelopeBudget(envelopeId, budget) {
-        const userBudget = await this.getUserById(this.userId).balance
-        if (budget < userBudget) {
-            const response = await this.pool.query(sql(
+    async addEnvelopeBudget(envelopeCategory, amount) {
+        //const userBudget = await this.getUserById(this.userId).rows.budget // does not work??
+        const envelope = await this.getEnvelopeByCategory(envelopeCategory)
+        const envelopeBalance = envelope.balance
+
+        if (amount) {
+            const newBalance = parseInt(amount) + envelopeBalance;
+
+            await this.pool.query(sql(
                 "UPDATE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
-                "SET BALANCE = :budget " +
-                "WHERE ID = :envelopeId RETURNING BALANCE;"
-            ))({
-                budget: budget,
-                id: envelopeId
-            })
-            return response.rows[0].balance
+                "SET BALANCE = :balance " +
+                "WHERE CATEGORY = :envelopeCategory;"
+            )({
+                balance: newBalance,
+                envelopeCategory: envelopeCategory
+            }))
+            await this.createTX(
+                envelopeCategory,
+                'Add',
+                amount
+            )
+
         } else {
-            return "Failed to set budget."
+
+            return "Failed to add balance.";
         }
     }
     async transferFund(fromCategory, toCategory, amount) {
 
-        const oldEnvelopeBudget = await this.pool.query(sql(
-            "SELECT BALANCE FROM " +
-            "PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
-            "WHERE CATEGORY = :fromCategory;"
-        )({
-            fromCategory:fromCategory
-        }))
-        const newEnvelopeBudget = await this.pool.query(sql(
-            "SELECT BALANCE FROM " +
-            "PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
-            "WHERE CATEGORY = :toCategory;"
-        )({
-            toCategory:toCategory
-        }))
-
-        if (amount > oldEnvelopeBudget.rows[0].balance) {
+        const oldEnvelope = await this.getEnvelopeByCategory(fromCategory);
+        const newEnvelope = await this.getEnvelopeByCategory(toCategory);
+        if (amount > oldEnvelope.balance) {
             return "Error, budget underflow";
         } else {
 
-            let newAmount = oldEnvelopeBudget.rows[0].balance - amount;
-            await this.pool.query(sql(
-                "UPDATE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
-                "SET BALANCE = :newAmount WHERE CATEGORY = :fromCategory " +
-                "RETURNING BALANCE;"
-            )({
-                newAmount:newAmount,
-                fromCategory:fromCategory
-            }))
+            //design choice, transaction are create for each transaction
+            // may need to add logic to turn off tx creation on transfer
+            await this.spendEnvelope(oldEnvelope.category, amount);
+            await this.addEnvelopeBudget(newEnvelope.category, amount);
 
-            newAmount = newEnvelopeBudget.rows[0].balance + amount;
-            await this.pool.query(sql(
-                "UPDATE PERSONAL_BUDGET.ENVELOPES.ENVELOPE " +
-                "SET BALANCE = :amount WHERE CATEGORY = :toCategory " +
-                "RETURNING BALANCE;"
-            )({
-                amount:newAmount,
-                toCategory:toCategory
-            }))
+            // await this.createTX(
+            //     oldEnvelope.category,
+            //     'Transfer',
+            //     amount,
+            //     newEnvelope.category
+            // )
+
         }
     }
 }

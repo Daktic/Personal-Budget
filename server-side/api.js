@@ -6,15 +6,6 @@ const EnvelopeDB = require("./db")
 
 const envelopes = new EnvelopeDB(1);
 
-// middlewear imports
-const {
-    updateEnvelopeByIndex
-} = require("./middleware");
-
-// spendRouter
-const spendRouter = require("./spend");
-apiRouter.use("/spend", spendRouter)
-
 // GET all
 apiRouter.get("/", async (req, res) =>{
     res.send(await envelopes.getEnvelopes()); //returns an array of envelope objects
@@ -43,8 +34,7 @@ apiRouter.put("/:categoryName", async (req, res, next) =>{
     res.send(await envelopes.setCategoryName(req.params.categoryName, req.body.newName));
 });
 
-//ToDO
-//does not appear to be working.
+
 apiRouter.delete("/:categoryName", async (req, res, next)=>{
     res.send(await envelopes.deleteEnvelope(null, req.params.categoryName));
 
@@ -56,6 +46,9 @@ apiRouter.put("/:categoryName/transfer", async (req, res, next) =>{
         req.body.category,
         req.body.amount
     ));
+});
+apiRouter.put("/:categoryName/spend", async (req, res, next) =>{
+    res.send(await envelopes.spendEnvelope(req.params.categoryName, req.query.amount));
 });
 
 // Export router to "server.js"
